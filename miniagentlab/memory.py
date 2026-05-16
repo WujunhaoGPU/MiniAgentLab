@@ -11,6 +11,16 @@ class MemoryReferenceError(ValueError):
 
 
 @dataclass(frozen=True)
+class ConversationTurn:
+    role: str
+    content: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class MemoryItem:
     key: str
     value: Any
@@ -63,3 +73,41 @@ class ShortTermMemory:
             return [self.resolve_references(item) for item in value]
 
         return value
+
+
+class ConversationMemory:
+    """Stores user/assistant turns across agent runs."""
+
+    allowed_roles = {"user", "assistant", "system"}
+
+    def __init__(self, max_turns: int = 20) -> None:
+        if max_turns < 1:
+            raise ValueError("max_turns must be at least 1")
+
+        self.max_turns = max_turns
+        self._turns: list[ConversationTurn] = []
+
+    def add(self, role: str, content: str, **metadata: Any) -> None:
+        if role not in self.allowed_roles:
+            raise ValueError(f"Unsupported conversation role: {role}")
+        self._turns.append(
+            ConversationTurn(
+                role=role,
+                content=content,
+                metadata=metadata,
+            )
+        )
+        self._turns = self._turns[-self.max_turns :]
+
+    def recent(self, limit: int | None = None) -> list[ConversationTurn]:
+        if limit is None:
+            return list(self._turns)
+        if limit < 1:
+            return []
+        return self._turns[-limit:]
+
+    def clear(self) -> None:
+        self._turns.clear()
+
+    def to_dict(self) -> list[dict[str, Any]]:
+        return [turn.to_dict() for turn in self._turns]

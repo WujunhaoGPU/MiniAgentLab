@@ -61,15 +61,15 @@ MiniAgentLab 主要用于学习和实践以下能力：
 - `LLMPlanner`：调用 LLM 生成结构化 JSON 计划，并在解析失败时重试修复
 - `OpenAICompatibleLLM`：使用标准库封装 OpenAI-compatible chat completions API，可读取 `.env`
 - `ShortTermMemory`：保存单次 Agent 运行中的 step 输出，供后续模块读取上下文
+- `ConversationMemory`：保存多次 `agent.run()` 之间的 user / assistant 对话历史
 - `ToolRegistry`：支持注册 Python 函数工具，并统一返回调用结果
 - `Executor`：顺序执行计划步骤，支持失败重试和 `max_steps` 步数上限
 - `TraceLogger`：记录任务、`run_id`、计划、每一步工具调用、输出、错误和最终结果
 - `calculator` 示例工具：安全执行基础数学表达式
-- 单元测试：覆盖工具注册、重复注册、未知工具、参数错误、calculator 异常、Agent 最小闭环执行、`run_id`、`max_steps`、`LLMPlanner` 和 `ShortTermMemory`
+- 单元测试：覆盖工具注册、重复注册、未知工具、参数错误、calculator 异常、Agent 最小闭环执行、`run_id`、`max_steps`、`LLMPlanner`、`ShortTermMemory` 和 `ConversationMemory`
 
 后续仍待实现的扩展方向：
 
-- `ConversationMemory`：多轮对话历史
 - `VectorMemory`：文档检索记忆
 - `Reflection`：失败分析、参数修正、重新规划
 - SQL 分析 Agent
@@ -119,6 +119,7 @@ MiniAgentLab/
     test_minimal_loop.py  # 单元测试
     test_llm_planner.py   # LLMPlanner 单元测试
     test_memory.py        # ShortTermMemory 单元测试
+    test_conversation_memory.py # ConversationMemory 单元测试
   traces/
     calculator_trace.json # 示例运行后生成的 Trace
   pyproject.toml
@@ -163,7 +164,7 @@ python -m unittest discover -s tests
 预期输出：
 
 ```text
-Ran 16 tests in 0.002s
+Ran 24 tests in 0.004s
 
 OK
 ```
@@ -398,6 +399,9 @@ ShortTermMemory
 
 ConversationMemory
 -> 保存多轮对话历史
+-> 不会在每次 agent.run() 开始时清空
+-> Agent 会自动记录 user task 和 assistant final_answer
+-> AgentResult.conversation 会返回截至本次运行的对话历史
 ```
 
 示例计划：

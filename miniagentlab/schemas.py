@@ -42,4 +42,5 @@ class AgentResult:
     final_answer: str
     outputs: dict[str, Any]
     memory: dict[str, Any]
+    conversation: list[dict[str, Any]]
     trace: dict[str, Any]
