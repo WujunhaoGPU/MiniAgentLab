@@ -28,6 +28,33 @@ class Plan:
 
 
 @dataclass(frozen=True)
+class PlannerContext:
+    conversation: list[dict[str, Any]] = field(default_factory=list)
+    operation_hints: list[OperationHint] = field(default_factory=list)
+    max_conversation_turns: int = 6
+
+    def recent_conversation(self) -> list[dict[str, Any]]:
+        if self.max_conversation_turns < 1:
+            return []
+        return self.conversation[-self.max_conversation_turns :]
+
+    def operation_hints_as_dicts(self) -> list[dict[str, str]]:
+        return [hint.to_dict() for hint in self.operation_hints]
+
+
+@dataclass(frozen=True)
+class OperationHint:
+    intent: str
+    reference: str
+    operator: str
+    operand: str
+    raw_text: str
+
+    def to_dict(self) -> dict[str, str]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class ToolResult:
     success: bool
     output: Any = None

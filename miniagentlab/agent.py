@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from .executor import Executor
 from .memory import ConversationMemory, ShortTermMemory
+from .operation_hints import parse_operation_hints
 from .planner import Planner
-from .schemas import AgentResult
+from .schemas import AgentResult, PlannerContext
 from .tool_registry import ToolRegistry
 from .trace import TraceLogger
 
@@ -36,9 +37,13 @@ class Agent:
 
     def run(self, task: str) -> AgentResult:
         self.memory.clear()
+        planner_context = PlannerContext(
+            conversation=self.conversation_memory.to_dict(),
+            operation_hints=parse_operation_hints(task),
+        )
         self.conversation_memory.add("user", task)
         self.trace_logger.start_task(task)
-        plan = self.planner.plan(task, self.tools)
+        plan = self.planner.plan(task, self.tools, context=planner_context)
         self.trace_logger.record_plan(plan)
         execution = self.executor.execute(plan)
 

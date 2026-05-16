@@ -60,13 +60,15 @@ MiniAgentLab 主要用于学习和实践以下能力：
 - `RuleBasedPlanner`：基于规则的确定性 Planner，用于测试和最小闭环演示
 - `LLMPlanner`：调用 LLM 生成结构化 JSON 计划，并在解析失败时重试修复
 - `OpenAICompatibleLLM`：使用标准库封装 OpenAI-compatible chat completions API，可读取 `.env`
+- `PlannerContext`：把对话历史等上下文传给 Planner，避免 Planner 直接依赖 Agent 内部状态
+- `OperationHint`：对“上一步结果 + 加减乘除”这类 follow-up 指令做确定性解析
 - `ShortTermMemory`：保存单次 Agent 运行中的 step 输出，供后续模块读取上下文
 - `ConversationMemory`：保存多次 `agent.run()` 之间的 user / assistant 对话历史
 - `ToolRegistry`：支持注册 Python 函数工具，并统一返回调用结果
 - `Executor`：顺序执行计划步骤，支持失败重试和 `max_steps` 步数上限
 - `TraceLogger`：记录任务、`run_id`、计划、每一步工具调用、输出、错误和最终结果
 - `calculator` 示例工具：安全执行基础数学表达式
-- 单元测试：覆盖工具注册、重复注册、未知工具、参数错误、calculator 异常、Agent 最小闭环执行、`run_id`、`max_steps`、`LLMPlanner`、`ShortTermMemory` 和 `ConversationMemory`
+- 单元测试：覆盖工具注册、重复注册、未知工具、参数错误、calculator 异常、Agent 最小闭环执行、`run_id`、`max_steps`、`LLMPlanner`、`PlannerContext`、`OperationHint`、`ShortTermMemory` 和 `ConversationMemory`
 
 后续仍待实现的扩展方向：
 
@@ -107,9 +109,9 @@ MiniAgentLab/
     builtin_tools.py      # 内置工具，例如 calculator
     executor.py           # 执行计划步骤
     llm.py                # OpenAI-compatible LLM 客户端
-    memory.py             # 短期记忆
-    planner.py            # Planner 抽象与规则 Planner
-    schemas.py            # Plan、Step、ToolResult 等数据结构
+    memory.py             # 短期记忆与对话记忆
+    planner.py            # Planner 抽象、规则 Planner 与 LLMPlanner
+    schemas.py            # Plan、Step、PlannerContext、ToolResult 等数据结构
     tool_registry.py      # 工具注册与调用
     trace.py              # 执行轨迹记录与导出
   examples/
@@ -164,7 +166,7 @@ python -m unittest discover -s tests
 预期输出：
 
 ```text
-Ran 24 tests in 0.004s
+Ran 35 tests in 0.005s
 
 OK
 ```
@@ -402,6 +404,17 @@ ConversationMemory
 -> 不会在每次 agent.run() 开始时清空
 -> Agent 会自动记录 user task 和 assistant final_answer
 -> AgentResult.conversation 会返回截至本次运行的对话历史
+
+PlannerContext
+-> Agent 在规划前读取当前任务之前的 ConversationMemory
+-> LLMPlanner 只取最近 N 轮 conversation 写入 prompt
+-> 当前 user task 仍然通过 task 单独传入，避免在 prompt 中重复
+
+OperationHint
+-> Agent 对当前 task 做轻量规则解析
+-> 识别“刚才/上一步/previous/that”等引用词和加减乘除操作
+-> 当存在 prior result + operation hint + calculator 工具时，LLMPlanner 会走确定性 fast path
+-> 例如 prior result=100，hint operator="-", operand="12"，直接生成 expression "100 - 12"
 ```
 
 示例计划：

@@ -6,13 +6,13 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from .llm import LLMClient
-from .schemas import Plan, Step
+from .schemas import Plan, PlannerContext, Step
 from .tool_registry import ToolRegistry
 
 
 class Planner(ABC):
     @abstractmethod
-    def plan(self, task: str, tools: ToolRegistry) -> Plan:
+    def plan(self, task: str, tools: ToolRegistry, context: PlannerContext | None = None) -> Plan:
         raise NotImplementedError
 
 
@@ -21,7 +21,7 @@ class RuleBasedPlanner(Planner):
 
     _expression_pattern = re.compile(r"[-+*/().%\d\s]+")
 
-    def plan(self, task: str, tools: ToolRegistry) -> Plan:
+    def plan(self, task: str, tools: ToolRegistry, context: PlannerContext | None = None) -> Plan:
         if tools.has("calculator"):
             expression = self._extract_expression(task)
             if expression:
@@ -55,8 +55,12 @@ class LLMPlanner(Planner):
         self.llm = llm
         self.max_retries = max_retries
 
-    def plan(self, task: str, tools: ToolRegistry) -> Plan:
-        prompt = self._build_prompt(task, tools)
+    def plan(self, task: str, tools: ToolRegistry, context: PlannerContext | None = None) -> Plan:
+        hinted_plan = self._try_plan_from_operation_hints(task, tools, context)
+        if hinted_plan is not None:
+            return hinted_plan
+
+        prompt = self._build_prompt(task, tools, context)
         last_error: str | None = None
 
         for attempt in range(self.max_retries + 1):
@@ -65,11 +69,39 @@ class LLMPlanner(Planner):
                 return self._parse_plan(response, tools)
             except ValueError as exc:
                 last_error = str(exc)
-                prompt = self._build_repair_prompt(task, response, last_error, tools)
+                prompt = self._build_repair_prompt(task, response, last_error, tools, context)
 
         raise ValueError(f"LLMPlanner failed to produce a valid plan: {last_error}")
 
-    def _build_prompt(self, task: str, tools: ToolRegistry) -> str:
+    def _try_plan_from_operation_hints(
+        self,
+        task: str,
+        tools: ToolRegistry,
+        context: PlannerContext | None,
+    ) -> Plan | None:
+        if context is None or not context.operation_hints or not tools.has("calculator"):
+            return None
+
+        prior_results = self._extract_prior_results(context.recent_conversation())
+        if not prior_results:
+            return None
+
+        hint = context.operation_hints[0]
+        prior_value = prior_results[-1]["value"]
+        expression = f"{prior_value} {hint.operator} {hint.operand}"
+        return Plan(
+            goal=task,
+            steps=[
+                Step(
+                    id="step_1",
+                    description="Apply parsed arithmetic operation hint to the previous result.",
+                    tool="calculator",
+                    args={"expression": expression},
+                )
+            ],
+        )
+
+    def _build_prompt(self, task: str, tools: ToolRegistry, context: PlannerContext | None = None) -> str:
         tool_specs = [
             {
                 "name": spec.name,
@@ -78,9 +110,27 @@ class LLMPlanner(Planner):
             }
             for spec in tools.specs()
         ]
+        conversation = context.recent_conversation() if context is not None else []
+        operation_hints = context.operation_hints_as_dicts() if context is not None else []
+        prior_results = self._extract_prior_results(conversation)
         return (
             "Create a JSON execution plan for the user task.\n"
             "Return only one JSON object, without markdown fences or commentary.\n"
+            "Resolve references to earlier turns before choosing tool arguments. References may appear as "
+            "previous result, last answer, that, it, 刚才的结果, 上一步, 前面的答案, or similar phrases.\n"
+            "Prefer Parsed operation hints for operation and operand when provided.\n"
+            "Prefer the 'Resolved prior results' list when a prior result is needed.\n"
+            "When the task transforms, combines, compares, or explains a prior value, tool args must include "
+            "the resolved prior value and the current operation, not only the new operand.\n"
+            "Preserve the user's requested operation exactly. For arithmetic planning, 加/add means '+', "
+            "减/subtract means '-', 乘/multiply means '*', and 除/divide means '/'.\n"
+            "Reference resolution examples:\n"
+            "- Recent assistant says 'Result: 21'; user asks 'add 5 to the previous result' -> use expression '21 + 5'.\n"
+            "- Recent assistant says 'Result: 8'; user asks 'multiply that by 3' -> use expression '8 * 3'.\n"
+            "- Recent assistant says 'Result: 100'; user asks 'subtract 12 from it' -> use expression '100 - 12'.\n"
+            "- 最近 assistant 说 'Result: 100'；用户说 '把上一步的结果减 12' -> use expression '100 - 12'.\n"
+            "- 最近 assistant 说 'Result: 45'；用户说 '把刚才的结果除以 5' -> use expression '45 / 5'.\n"
+            "If no relevant prior value exists, do not invent one; create a plan that only uses available information.\n"
             "The JSON schema is:\n"
             "{\n"
             '  "goal": "string",\n'
@@ -93,9 +143,25 @@ class LLMPlanner(Planner):
             "    }\n"
             "  ]\n"
             "}\n\n"
+            f"Recent conversation before this task:\n{json.dumps(conversation, ensure_ascii=False, indent=2)}\n\n"
+            f"Resolved prior results from recent conversation:\n{json.dumps(prior_results, ensure_ascii=False, indent=2)}\n\n"
+            f"Parsed operation hints:\n{json.dumps(operation_hints, ensure_ascii=False, indent=2)}\n\n"
             f"Registered tools:\n{json.dumps(tool_specs, ensure_ascii=False, indent=2)}\n\n"
             f"User task:\n{task}"
         )
+
+    def _extract_prior_results(self, conversation: list[dict[str, Any]]) -> list[dict[str, str]]:
+        results: list[dict[str, str]] = []
+        for turn in conversation:
+            content = str(turn.get("content", ""))
+            for match in re.finditer(r"Result:\s*([^\n\r]+)", content):
+                results.append(
+                    {
+                        "role": str(turn.get("role", "")),
+                        "value": match.group(1).strip(),
+                    }
+                )
+        return results
 
     def _build_repair_prompt(
         self,
@@ -103,9 +169,10 @@ class LLMPlanner(Planner):
         previous_response: str,
         error: str,
         tools: ToolRegistry,
+        context: PlannerContext | None = None,
     ) -> str:
         return (
-            f"{self._build_prompt(task, tools)}\n\n"
+            f"{self._build_prompt(task, tools, context)}\n\n"
             "Your previous response could not be parsed or validated.\n"
             f"Validation error: {error}\n"
             f"Previous response:\n{previous_response}\n\n"

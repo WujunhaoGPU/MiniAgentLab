@@ -5,14 +5,14 @@ import unittest
 from miniagentlab import Agent, RuleBasedPlanner, ToolRegistry, TraceLogger
 from miniagentlab.builtin_tools import calculator
 from miniagentlab.planner import Planner
-from miniagentlab.schemas import Plan, Step
+from miniagentlab.schemas import Plan, PlannerContext, Step
 
 
 class StaticPlanner(Planner):
     def __init__(self, plan: Plan) -> None:
         self._plan = plan
 
-    def plan(self, task: str, tools: ToolRegistry) -> Plan:
+    def plan(self, task: str, tools: ToolRegistry, context: PlannerContext | None = None) -> Plan:
         return self._plan
 
 
