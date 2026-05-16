@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .executor import Executor
+from .memory import ShortTermMemory
 from .planner import Planner
 from .schemas import AgentResult
 from .tool_registry import ToolRegistry
@@ -15,20 +16,24 @@ class Agent:
         planner: Planner,
         tools: ToolRegistry,
         trace_logger: TraceLogger | None = None,
+        memory: ShortTermMemory | None = None,
         max_retries: int = 1,
         max_steps: int = 10,
     ) -> None:
         self.planner = planner
         self.tools = tools
         self.trace_logger = trace_logger or TraceLogger()
+        self.memory = memory or ShortTermMemory()
         self.executor = Executor(
             tools=tools,
             trace_logger=self.trace_logger,
+            memory=self.memory,
             max_retries=max_retries,
             max_steps=max_steps,
         )
 
     def run(self, task: str) -> AgentResult:
+        self.memory.clear()
         self.trace_logger.start_task(task)
         plan = self.planner.plan(task, self.tools)
         self.trace_logger.record_plan(plan)
@@ -46,6 +51,7 @@ class Agent:
             success=execution.success,
             final_answer=final_answer,
             outputs=execution.outputs,
+            memory=self.memory.to_dict(),
             trace=self.trace_logger.to_dict(),
         )
 

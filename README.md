@@ -60,15 +60,17 @@ MiniAgentLab 主要用于学习和实践以下能力：
 - `RuleBasedPlanner`：基于规则的确定性 Planner，用于测试和最小闭环演示
 - `LLMPlanner`：调用 LLM 生成结构化 JSON 计划，并在解析失败时重试修复
 - `OpenAICompatibleLLM`：使用标准库封装 OpenAI-compatible chat completions API，可读取 `.env`
+- `ShortTermMemory`：保存单次 Agent 运行中的 step 输出，供后续模块读取上下文
 - `ToolRegistry`：支持注册 Python 函数工具，并统一返回调用结果
 - `Executor`：顺序执行计划步骤，支持失败重试和 `max_steps` 步数上限
 - `TraceLogger`：记录任务、`run_id`、计划、每一步工具调用、输出、错误和最终结果
 - `calculator` 示例工具：安全执行基础数学表达式
-- 单元测试：覆盖工具注册、重复注册、未知工具、参数错误、calculator 异常、Agent 最小闭环执行、`run_id`、`max_steps` 和 `LLMPlanner`
+- 单元测试：覆盖工具注册、重复注册、未知工具、参数错误、calculator 异常、Agent 最小闭环执行、`run_id`、`max_steps`、`LLMPlanner` 和 `ShortTermMemory`
 
 后续仍待实现的扩展方向：
 
-- `Memory`：短期记忆、对话记忆、检索记忆
+- `ConversationMemory`：多轮对话历史
+- `VectorMemory`：文档检索记忆
 - `Reflection`：失败分析、参数修正、重新规划
 - SQL 分析 Agent
 - 文档问答 Agent
@@ -105,6 +107,7 @@ MiniAgentLab/
     builtin_tools.py      # 内置工具，例如 calculator
     executor.py           # 执行计划步骤
     llm.py                # OpenAI-compatible LLM 客户端
+    memory.py             # 短期记忆
     planner.py            # Planner 抽象与规则 Planner
     schemas.py            # Plan、Step、ToolResult 等数据结构
     tool_registry.py      # 工具注册与调用
@@ -115,6 +118,7 @@ MiniAgentLab/
   tests/
     test_minimal_loop.py  # 单元测试
     test_llm_planner.py   # LLMPlanner 单元测试
+    test_memory.py        # ShortTermMemory 单元测试
   traces/
     calculator_trace.json # 示例运行后生成的 Trace
   pyproject.toml
@@ -159,7 +163,7 @@ python -m unittest discover -s tests
 预期输出：
 
 ```text
-Ran 12 tests in 0.002s
+Ran 16 tests in 0.002s
 
 OK
 ```
@@ -382,15 +386,47 @@ traces/calculator_trace.json
 
 目标：让 Agent 能保存上下文。
 
-建议先做简单版本：
+已完成简单版本：
 
 ```text
 ShortTermMemory
 -> 保存当前任务中的中间结果
+-> 每次 agent.run() 开始时清空
+-> 每个成功 step 的输出会写入 memory[step_id]
+-> 后续 step 可以用 "$memory.step_id" 引用前面 step 的输出
+-> AgentResult.memory 会返回本次运行的 memory snapshot
 
 ConversationMemory
 -> 保存多轮对话历史
 ```
+
+示例计划：
+
+```json
+{
+  "goal": "复用前一步结果",
+  "steps": [
+    {
+      "id": "step_1",
+      "description": "计算数值",
+      "tool": "calculator",
+      "args": {"expression": "3 * 7"}
+    },
+    {
+      "id": "step_2",
+      "description": "使用前一步结果",
+      "tool": "label_value",
+      "args": {"value": "$memory.step_1"}
+    }
+  ]
+}
+```
+
+当前规则：
+
+- 只有完整字符串形式的 `"$memory.step_1"` 会被替换
+- `dict` 和 `list` 中的引用会递归解析
+- 引用不存在时，当前 step 会失败并写入 Trace
 
 后续再考虑：
 
