@@ -19,7 +19,10 @@ MiniAgentLab 是一个半学习、半实践的轻量级 Agent 编排框架项目
 flowchart TD
     User["用户任务"] --> Agent["Agent"]
     Agent --> Planner["Planner"]
-    Planner --> Plan["Plan / Steps"]
+    Planner --> RulePlanner["RuleBasedPlanner"]
+    Planner --> LLMPlanner["LLMPlanner"]
+    RulePlanner --> Plan["Plan / Steps"]
+    LLMPlanner --> Plan
     Plan --> Executor["Executor"]
     Executor --> Guard["max_steps 检查"]
     Guard --> Registry["Tool Registry"]
@@ -55,15 +58,16 @@ MiniAgentLab 主要用于学习和实践以下能力：
 
 - `Agent`：统一协调 Planner、Executor、ToolRegistry 和 TraceLogger
 - `RuleBasedPlanner`：基于规则的确定性 Planner，用于测试和最小闭环演示
+- `LLMPlanner`：调用 LLM 生成结构化 JSON 计划，并在解析失败时重试修复
+- `OpenAICompatibleLLM`：使用标准库封装 OpenAI-compatible chat completions API，可读取 `.env`
 - `ToolRegistry`：支持注册 Python 函数工具，并统一返回调用结果
 - `Executor`：顺序执行计划步骤，支持失败重试和 `max_steps` 步数上限
 - `TraceLogger`：记录任务、`run_id`、计划、每一步工具调用、输出、错误和最终结果
 - `calculator` 示例工具：安全执行基础数学表达式
-- 单元测试：覆盖工具注册、重复注册、未知工具、参数错误、calculator 异常、Agent 最小闭环执行、`run_id` 和 `max_steps`
+- 单元测试：覆盖工具注册、重复注册、未知工具、参数错误、calculator 异常、Agent 最小闭环执行、`run_id`、`max_steps` 和 `LLMPlanner`
 
-暂未实现但已预留扩展方向：
+后续仍待实现的扩展方向：
 
-- `LLMPlanner`：调用大模型生成结构化计划
 - `Memory`：短期记忆、对话记忆、检索记忆
 - `Reflection`：失败分析、参数修正、重新规划
 - SQL 分析 Agent
@@ -100,17 +104,21 @@ MiniAgentLab/
     agent.py              # Agent 主协调器
     builtin_tools.py      # 内置工具，例如 calculator
     executor.py           # 执行计划步骤
+    llm.py                # OpenAI-compatible LLM 客户端
     planner.py            # Planner 抽象与规则 Planner
     schemas.py            # Plan、Step、ToolResult 等数据结构
     tool_registry.py      # 工具注册与调用
     trace.py              # 执行轨迹记录与导出
   examples/
     calculator_agent.py   # 最小闭环示例
+    llm_planner_agent.py  # LLMPlanner 示例
   tests/
     test_minimal_loop.py  # 单元测试
+    test_llm_planner.py   # LLMPlanner 单元测试
   traces/
     calculator_trace.json # 示例运行后生成的 Trace
   pyproject.toml
+  .env.example
   README.md
 ```
 
@@ -151,10 +159,34 @@ python -m unittest discover -s tests
 预期输出：
 
 ```text
-Ran 9 tests in 0.001s
+Ran 12 tests in 0.002s
 
 OK
 ```
+
+## 使用 LLMPlanner
+
+如果要让大模型负责生成计划，可以先准备 `.env`。不要把真实 `.env` 提交到 Git。
+
+```powershell
+copy .env.example .env
+```
+
+然后填写：
+
+```text
+DEEPSEEK_API_KEY=你的 key
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-v4-flash
+```
+
+运行 LLMPlanner 示例：
+
+```powershell
+python examples\llm_planner_agent.py
+```
+
+这个示例会让 LLM 输出结构化 JSON 计划，再交给现有的 `Executor` 和 `ToolRegistry` 执行。单元测试不会调用真实 API，而是使用 `FakeLLM` 返回固定 JSON，避免测试依赖网络和模型费用。
 
 ## 最小闭环示例说明
 
@@ -289,16 +321,16 @@ Trace 是 Agent 项目里非常重要的一部分。没有 Trace，Agent 失败�
 traces/calculator_trace.json
 ```
 
-## 为什么先不用 LLM
+## 为什么保留 RuleBasedPlanner
 
-这个项目第一步故意使用 `RuleBasedPlanner`，而不是马上接大模型。
+这个项目第一步故意使用 `RuleBasedPlanner`，而不是马上依赖大模型。
 
 原因是：
 
 - 规则 Planner 稳定，方便写测试
 - 可以先验证 Agent 框架本身是否合理
 - 避免一开始把错误来源混在一起
-- 后续接 LLM 时，只需要替换 Planner，不需要重写整个框架
+- 接入 LLM 时，只需要替换 Planner，不需要重写整个框架
 
 一个成熟的 Agent 框架应该能做到：
 
@@ -329,7 +361,7 @@ traces/calculator_trace.json
 
 目标：让大模型根据用户任务生成计划。
 
-建议实现：
+已完成基础接入：
 
 - 新增 `miniagentlab/llm.py`
 - 从 `.env` 读取 `LLM_BASE_URL`、`LLM_MODEL`、`DEEPSEEK_API_KEY`
@@ -337,6 +369,8 @@ traces/calculator_trace.json
 - 要求 LLM 只输出 JSON
 - 对 JSON 做格式校验
 - JSON 解析失败时自动重试一次
+- 使用 `FakeLLM` 编写不依赖真实 API 的单元测试
+- 新增 `examples/llm_planner_agent.py`
 
 注意事项：
 
