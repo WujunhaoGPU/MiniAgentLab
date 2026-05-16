@@ -18,13 +18,30 @@ class ExecutionResult:
 class Executor:
     """Runs plan steps against registered tools."""
 
-    def __init__(self, tools: ToolRegistry, trace_logger: TraceLogger, max_retries: int = 1) -> None:
+    def __init__(
+        self,
+        tools: ToolRegistry,
+        trace_logger: TraceLogger,
+        max_retries: int = 1,
+        max_steps: int = 10,
+    ) -> None:
+        if max_steps < 1:
+            raise ValueError("max_steps must be at least 1")
+
         self.tools = tools
         self.trace_logger = trace_logger
         self.max_retries = max_retries
+        self.max_steps = max_steps
 
     def execute(self, plan: Plan) -> ExecutionResult:
         outputs: dict[str, object] = {}
+
+        if len(plan.steps) > self.max_steps:
+            return ExecutionResult(
+                success=False,
+                outputs=outputs,
+                error=f"Plan has {len(plan.steps)} steps, exceeding max_steps={self.max_steps}",
+            )
 
         for step in plan.steps:
             attempts = 0

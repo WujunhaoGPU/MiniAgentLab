@@ -13,6 +13,25 @@ MiniAgentLab 是一个半学习、半实践的轻量级 Agent 编排框架项目
 -> Agent 汇总结果
 ```
 
+## 当前架构图
+
+```mermaid
+flowchart TD
+    User["用户任务"] --> Agent["Agent"]
+    Agent --> Planner["Planner"]
+    Planner --> Plan["Plan / Steps"]
+    Plan --> Executor["Executor"]
+    Executor --> Guard["max_steps 检查"]
+    Guard --> Registry["Tool Registry"]
+    Registry --> Tool["Python 工具函数"]
+    Tool --> Result["ToolResult"]
+    Result --> Executor
+    Executor --> Trace["Trace Logger"]
+    Trace --> RunTrace["run_id + plan + step logs + final answer"]
+    Executor --> Answer["最终结果"]
+    Answer --> Agent
+```
+
 你可以把这个项目理解为一个 Agent 框架学习实验室：每个模块都尽量小而清楚，方便继续扩展成网页检索 Agent、SQL 分析 Agent、文档问答 Agent 或多工具自动化 Agent。
 
 ## 项目定位
@@ -37,10 +56,10 @@ MiniAgentLab 主要用于学习和实践以下能力：
 - `Agent`：统一协调 Planner、Executor、ToolRegistry 和 TraceLogger
 - `RuleBasedPlanner`：基于规则的确定性 Planner，用于测试和最小闭环演示
 - `ToolRegistry`：支持注册 Python 函数工具，并统一返回调用结果
-- `Executor`：顺序执行计划步骤，支持失败重试
-- `TraceLogger`：记录任务、计划、每一步工具调用、输出、错误和最终结果
+- `Executor`：顺序执行计划步骤，支持失败重试和 `max_steps` 步数上限
+- `TraceLogger`：记录任务、`run_id`、计划、每一步工具调用、输出、错误和最终结果
 - `calculator` 示例工具：安全执行基础数学表达式
-- 单元测试：覆盖工具注册、重复注册、Agent 最小闭环执行
+- 单元测试：覆盖工具注册、重复注册、未知工具、参数错误、calculator 异常、Agent 最小闭环执行、`run_id` 和 `max_steps`
 
 暂未实现但已预留扩展方向：
 
@@ -132,7 +151,7 @@ python -m unittest discover -s tests
 预期输出：
 
 ```text
-Ran 3 tests in 0.000s
+Ran 9 tests in 0.001s
 
 OK
 ```
@@ -297,7 +316,7 @@ traces/calculator_trace.json
 
 目标：让当前框架更稳。
 
-建议任务：
+已完成任务：
 
 - 增加更多 calculator 异常测试
 - 增加未知工具调用测试

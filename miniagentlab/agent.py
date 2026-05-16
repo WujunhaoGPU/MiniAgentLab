@@ -16,11 +16,17 @@ class Agent:
         tools: ToolRegistry,
         trace_logger: TraceLogger | None = None,
         max_retries: int = 1,
+        max_steps: int = 10,
     ) -> None:
         self.planner = planner
         self.tools = tools
         self.trace_logger = trace_logger or TraceLogger()
-        self.executor = Executor(tools=tools, trace_logger=self.trace_logger, max_retries=max_retries)
+        self.executor = Executor(
+            tools=tools,
+            trace_logger=self.trace_logger,
+            max_retries=max_retries,
+            max_steps=max_steps,
+        )
 
     def run(self, task: str) -> AgentResult:
         self.trace_logger.start_task(task)

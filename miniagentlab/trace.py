@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from .schemas import Plan, Step
 
@@ -16,6 +17,7 @@ class TraceLogger:
 
     def start_task(self, task: str) -> None:
         self._trace = {
+            "run_id": f"run_{uuid4().hex}",
             "task": task,
             "started_at": datetime.now(timezone.utc).isoformat(),
             "plan": None,
