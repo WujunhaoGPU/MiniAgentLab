@@ -7,6 +7,8 @@ from .operation_hints import parse_operation_hints
 from .planner import LLMPlanner, RuleBasedPlanner
 from .reflection import PlanReflection, ReflectionResult
 from .schemas import OperationHint, PlannerContext
+from .sql_reflection import SQLReflection
+from .sql_tools import describe_table, list_tables, run_sql
 from .tool_registry import ToolRegistry
 from .trace import TraceLogger
 from .validator import PlanValidationIssue, PlanValidationResult, PlanValidator
@@ -24,8 +26,12 @@ __all__ = [
     "PlanValidator",
     "RuleBasedPlanner",
     "ReflectionResult",
+    "SQLReflection",
     "ShortTermMemory",
     "ToolRegistry",
     "TraceLogger",
+    "describe_table",
+    "list_tables",
     "parse_operation_hints",
+    "run_sql",
 ]

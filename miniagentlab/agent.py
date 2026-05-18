@@ -107,6 +107,49 @@ class Agent:
             )
 
         execution = self.executor.execute(plan)
+        while not execution.success and reflection_attempts < self.max_reflections:
+            reflection_attempts += 1
+            reflection = self.reflection.reflect_execution(plan, execution, planner_context)
+            reflections.append(reflection.to_dict())
+
+            if reflection.action != "replan":
+                break
+
+            planner_context = planner_context.with_reflection_feedback(reflection.feedback)
+            plan = self.planner.plan(task, self.tools, context=planner_context)
+            self.trace_logger.record_plan(plan)
+            validation = self.plan_validator.validate(
+                plan=plan,
+                tools=self.tools,
+                context=planner_context,
+                max_steps=self.executor.max_steps,
+            )
+
+            while not validation.valid and reflection_attempts < self.max_reflections:
+                reflection_attempts += 1
+                reflection = self.reflection.reflect(plan, validation, planner_context)
+                reflections.append(reflection.to_dict())
+
+                if reflection.action == "repair_plan" and reflection.plan is not None:
+                    plan = reflection.plan
+                elif reflection.action == "replan":
+                    planner_context = planner_context.with_reflection_feedback(reflection.feedback)
+                    plan = self.planner.plan(task, self.tools, context=planner_context)
+                else:
+                    break
+
+                self.trace_logger.record_plan(plan)
+                validation = self.plan_validator.validate(
+                    plan=plan,
+                    tools=self.tools,
+                    context=planner_context,
+                    max_steps=self.executor.max_steps,
+                )
+
+            if not validation.valid:
+                break
+
+            execution = self.executor.execute(plan)
 
         if execution.success:
             final_answer = self._summarize_success(task, execution.outputs)

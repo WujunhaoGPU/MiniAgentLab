@@ -169,7 +169,7 @@ python -m unittest discover -s tests
 预期输出：
 
 ```text
-Ran 43 tests in 0.004s
+Ran 55 tests in 0.583s
 
 OK
 ```
@@ -610,3 +610,31 @@ LLMPlanner -> Memory -> Reflection -> SQL Agent
 ```
 
 这样项目会从“最小闭环”逐步变成真正有展示价值的 Agent 编排框架。
+## SQLite 分析 Agent 第一版
+
+当前已经加入本地 SQLite 只读分析能力：
+
+- `miniagentlab/sql_tools.py`
+- `examples/sql_agent.py`
+- `tests/test_sql_tools.py`
+- `tests/test_sql_agent.py`
+
+第一版支持：
+
+- `list_tables(db_path)`：查看用户表
+- `describe_table(db_path, table_name)`：查看表结构
+- `run_sql(db_path, sql, max_rows=50)`：执行单条只读 `SELECT/WITH` 查询
+- 拒绝 `DELETE`、`UPDATE`、`DROP`、多语句 SQL 等危险操作
+
+运行示例：
+
+```powershell
+python examples\sql_agent.py
+```
+
+当前完整测试：
+
+```text
+Ran 55 tests in 0.583s
+OK
+```

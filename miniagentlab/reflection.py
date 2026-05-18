@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from .executor import ExecutionResult
 from .schemas import Plan, PlannerContext, Step
 from .validator import PlanValidationResult
 
@@ -22,7 +23,7 @@ class ReflectionResult:
 
 
 class PlanReflection:
-    """Decides how to respond to a failed plan validation."""
+    """Decides how to respond to failed validation or execution."""
 
     _REPAIRABLE_CODES = {"operation_hint_conflict", "missing_calculator_expression"}
 
@@ -52,6 +53,22 @@ class PlanReflection:
             feedback={
                 "source": "PlanValidator",
                 "issues": [issue.to_dict() for issue in validation.issues],
+            },
+        )
+
+    def reflect_execution(
+        self,
+        plan: Plan,
+        execution: ExecutionResult,
+        context: PlannerContext,
+    ) -> ReflectionResult:
+        return ReflectionResult(
+            action="fail",
+            reason="Execution failure is not handled by the default reflection policy.",
+            feedback={
+                "source": "Executor",
+                "error": execution.error,
+                "failed_step": execution.failed_step.to_dict() if execution.failed_step is not None else None,
             },
         )
 

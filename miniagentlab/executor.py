@@ -14,6 +14,7 @@ class ExecutionResult:
     success: bool
     outputs: dict[str, object] = field(default_factory=dict)
     error: str | None = None
+    failed_step: Step | None = None
 
 
 class Executor:
@@ -66,7 +67,7 @@ class Executor:
                         error=error,
                         duration_ms=duration_ms,
                     )
-                    return ExecutionResult(success=False, outputs=outputs, error=error)
+                    return ExecutionResult(success=False, outputs=outputs, error=error, failed_step=step)
 
                 resolved_step = Step(
                     id=step.id,
@@ -101,9 +102,9 @@ class Executor:
                 last_error = result.error
 
             else:
-                return ExecutionResult(success=False, outputs=outputs, error=last_error)
+                return ExecutionResult(success=False, outputs=outputs, error=last_error, failed_step=step)
 
             if last_error is not None and step.id not in outputs:
-                return ExecutionResult(success=False, outputs=outputs, error=last_error)
+                return ExecutionResult(success=False, outputs=outputs, error=last_error, failed_step=step)
 
         return ExecutionResult(success=True, outputs=outputs)
