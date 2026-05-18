@@ -110,6 +110,33 @@ class PlanValidatorTests(unittest.TestCase):
         self.assertEqual(result.issues[0].metadata["expected_expression"], "100 - 12")
         self.assertEqual(result.issues[0].metadata["actual_expression"], "100 * 12")
 
+    def test_rejects_invalid_memory_reference_syntax(self) -> None:
+        registry = ToolRegistry()
+        registry.register(calculator, name="calculator")
+        plan = Plan(
+            goal="bad memory reference",
+            steps=[
+                Step(
+                    id="step_1",
+                    description="Calculate.",
+                    tool="calculator",
+                    args={"expression": "2 + 2"},
+                ),
+                Step(
+                    id="step_2",
+                    description="Use previous output.",
+                    tool="calculator",
+                    args={"expression": "$step_1.result"},
+                ),
+            ],
+        )
+
+        result = PlanValidator().validate(plan, registry)
+
+        self.assertFalse(result.valid)
+        self.assertEqual(result.issues[0].code, "invalid_memory_reference")
+        self.assertEqual(result.issues[0].metadata["expected_prefix"], "$memory.")
+
     def test_agent_repairs_high_confidence_validation_failure(self) -> None:
         registry = ToolRegistry()
         registry.register(calculator, name="calculator")

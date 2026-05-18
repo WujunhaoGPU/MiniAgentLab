@@ -1,6 +1,7 @@
 """MiniAgentLab: a tiny agent orchestration playground."""
 
 from .agent import Agent
+from .document_tools import answer_question, chunk_document, index_chunks, load_document, retrieve_chunks
 from .llm import OpenAICompatibleLLM
 from .memory import ConversationMemory, ShortTermMemory
 from .operation_hints import parse_operation_hints
@@ -30,8 +31,13 @@ __all__ = [
     "ShortTermMemory",
     "ToolRegistry",
     "TraceLogger",
+    "answer_question",
+    "chunk_document",
     "describe_table",
+    "index_chunks",
     "list_tables",
+    "load_document",
     "parse_operation_hints",
+    "retrieve_chunks",
     "run_sql",
 ]

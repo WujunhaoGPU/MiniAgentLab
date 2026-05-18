@@ -169,7 +169,7 @@ python -m unittest discover -s tests
 预期输出：
 
 ```text
-Ran 55 tests in 0.583s
+Ran 68 tests in 0.642s
 
 OK
 ```
@@ -635,6 +635,6 @@ python examples\sql_agent.py
 当前完整测试：
 
 ```text
-Ran 55 tests in 0.583s
+Ran 62 tests in 0.619s
 OK
 ```

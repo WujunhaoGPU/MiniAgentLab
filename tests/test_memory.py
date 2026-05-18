@@ -176,6 +176,22 @@ class ShortTermMemoryTests(unittest.TestCase):
         self.assertEqual(result.outputs["step_2"], "answer,4")
         self.assertEqual(result.trace["steps"][1]["step"]["args"]["values"], ["answer", "4"])
 
+    def test_memory_reference_can_access_dict_field(self) -> None:
+        memory = ShortTermMemory()
+        memory.set("step_1", {"store_id": "notes", "chunk_count": 3}, source="index_chunks")
+
+        resolved = memory.resolve_references("$memory.step_1.store_id")
+
+        self.assertEqual(resolved, "notes")
+
+    def test_memory_reference_can_access_list_index(self) -> None:
+        memory = ShortTermMemory()
+        memory.set("step_1", ["first", "second"], source="list_values")
+
+        resolved = memory.resolve_references("$memory.step_1.1")
+
+        self.assertEqual(resolved, "second")
+
     def test_missing_memory_reference_fails_step_before_tool_call(self) -> None:
         registry = ToolRegistry()
         registry.register(label_value, name="label_value")

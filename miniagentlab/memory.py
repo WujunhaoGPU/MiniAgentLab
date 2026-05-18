@@ -59,12 +59,13 @@ class ShortTermMemory:
 
     def resolve_references(self, value: Any) -> Any:
         if isinstance(value, str) and value.startswith(MEMORY_REFERENCE_PREFIX):
-            key = value.removeprefix(MEMORY_REFERENCE_PREFIX)
-            if not key:
+            reference = value.removeprefix(MEMORY_REFERENCE_PREFIX)
+            if not reference:
                 raise MemoryReferenceError("Memory reference is missing a key")
+            key, path = self._split_reference(reference)
             if key not in self._items:
                 raise MemoryReferenceError(f"Memory reference not found: {value}")
-            return self._items[key].value
+            return self._resolve_path(self._items[key].value, path, value)
 
         if isinstance(value, dict):
             return {key: self.resolve_references(item) for key, item in value.items()}
@@ -73,6 +74,27 @@ class ShortTermMemory:
             return [self.resolve_references(item) for item in value]
 
         return value
+
+    def _split_reference(self, reference: str) -> tuple[str, list[str]]:
+        parts = reference.split(".")
+        return parts[0], parts[1:]
+
+    def _resolve_path(self, value: Any, path: list[str], raw_reference: str) -> Any:
+        current = value
+        for part in path:
+            if isinstance(current, dict):
+                if part not in current:
+                    raise MemoryReferenceError(f"Memory reference path not found: {raw_reference}")
+                current = current[part]
+                continue
+            if isinstance(current, list) and part.isdigit():
+                index = int(part)
+                if index >= len(current):
+                    raise MemoryReferenceError(f"Memory reference list index out of range: {raw_reference}")
+                current = current[index]
+                continue
+            raise MemoryReferenceError(f"Memory reference cannot access path on value: {raw_reference}")
+        return current
 
 
 class ConversationMemory:

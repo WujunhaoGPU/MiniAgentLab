@@ -81,6 +81,7 @@ class PlanValidator:
                         metadata={"tool": step.tool},
                     )
                 )
+            issues.extend(self._validate_memory_reference_syntax(step))
 
         issues.extend(self._validate_operation_hints(plan, context))
 
@@ -146,3 +147,35 @@ class PlanValidator:
 
     def _compact_expression(self, expression: str) -> str:
         return "".join(expression.split())
+
+    def _validate_memory_reference_syntax(self, step: Step) -> list[PlanValidationIssue]:
+        issues: list[PlanValidationIssue] = []
+        for path, value in self._walk_values(step.args):
+            if not isinstance(value, str):
+                continue
+            if not value.startswith("$"):
+                continue
+            if value.startswith("$memory."):
+                continue
+            issues.append(
+                PlanValidationIssue(
+                    code="invalid_memory_reference",
+                    message=(
+                        f"Step {step.id} has invalid memory reference at {path}: {value}. "
+                        "Use $memory.step_id to reference prior step outputs."
+                    ),
+                    step_id=step.id,
+                    metadata={"path": path, "value": value, "expected_prefix": "$memory."},
+                )
+            )
+        return issues
+
+    def _walk_values(self, value: Any, path: str = "args") -> list[tuple[str, Any]]:
+        values = [(path, value)]
+        if isinstance(value, dict):
+            for key, item in value.items():
+                values.extend(self._walk_values(item, f"{path}.{key}"))
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                values.extend(self._walk_values(item, f"{path}[{index}]"))
+        return values
