@@ -28,9 +28,22 @@ class Plan:
 
 
 @dataclass(frozen=True)
+class OperationHint:
+    intent: str
+    reference: str
+    operator: str
+    operand: str
+    raw_text: str
+
+    def to_dict(self) -> dict[str, str]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class PlannerContext:
     conversation: list[dict[str, Any]] = field(default_factory=list)
     operation_hints: list[OperationHint] = field(default_factory=list)
+    reflection_feedback: list[dict[str, Any]] = field(default_factory=list)
     max_conversation_turns: int = 6
 
     def recent_conversation(self) -> list[dict[str, Any]]:
@@ -41,17 +54,13 @@ class PlannerContext:
     def operation_hints_as_dicts(self) -> list[dict[str, str]]:
         return [hint.to_dict() for hint in self.operation_hints]
 
-
-@dataclass(frozen=True)
-class OperationHint:
-    intent: str
-    reference: str
-    operator: str
-    operand: str
-    raw_text: str
-
-    def to_dict(self) -> dict[str, str]:
-        return asdict(self)
+    def with_reflection_feedback(self, feedback: dict[str, Any]) -> PlannerContext:
+        return PlannerContext(
+            conversation=self.conversation,
+            operation_hints=self.operation_hints,
+            reflection_feedback=[*self.reflection_feedback, feedback],
+            max_conversation_turns=self.max_conversation_turns,
+        )
 
 
 @dataclass(frozen=True)
@@ -71,3 +80,5 @@ class AgentResult:
     memory: dict[str, Any]
     conversation: list[dict[str, Any]]
     trace: dict[str, Any]
+    validation: dict[str, Any] = field(default_factory=dict)
+    reflections: list[dict[str, Any]] = field(default_factory=list)

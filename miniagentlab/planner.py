@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from .llm import LLMClient
+from .operation_hints import extract_result_values
 from .schemas import Plan, PlannerContext, Step
 from .tool_registry import ToolRegistry
 
@@ -112,6 +113,7 @@ class LLMPlanner(Planner):
         ]
         conversation = context.recent_conversation() if context is not None else []
         operation_hints = context.operation_hints_as_dicts() if context is not None else []
+        reflection_feedback = context.reflection_feedback if context is not None else []
         prior_results = self._extract_prior_results(conversation)
         return (
             "Create a JSON execution plan for the user task.\n"
@@ -120,6 +122,7 @@ class LLMPlanner(Planner):
             "previous result, last answer, that, it, 刚才的结果, 上一步, 前面的答案, or similar phrases.\n"
             "Prefer Parsed operation hints for operation and operand when provided.\n"
             "Prefer the 'Resolved prior results' list when a prior result is needed.\n"
+            "If Reflection feedback is provided, fix the reported plan issues before returning JSON.\n"
             "When the task transforms, combines, compares, or explains a prior value, tool args must include "
             "the resolved prior value and the current operation, not only the new operand.\n"
             "Preserve the user's requested operation exactly. For arithmetic planning, 加/add means '+', "
@@ -146,22 +149,13 @@ class LLMPlanner(Planner):
             f"Recent conversation before this task:\n{json.dumps(conversation, ensure_ascii=False, indent=2)}\n\n"
             f"Resolved prior results from recent conversation:\n{json.dumps(prior_results, ensure_ascii=False, indent=2)}\n\n"
             f"Parsed operation hints:\n{json.dumps(operation_hints, ensure_ascii=False, indent=2)}\n\n"
+            f"Reflection feedback:\n{json.dumps(reflection_feedback, ensure_ascii=False, indent=2)}\n\n"
             f"Registered tools:\n{json.dumps(tool_specs, ensure_ascii=False, indent=2)}\n\n"
             f"User task:\n{task}"
         )
 
     def _extract_prior_results(self, conversation: list[dict[str, Any]]) -> list[dict[str, str]]:
-        results: list[dict[str, str]] = []
-        for turn in conversation:
-            content = str(turn.get("content", ""))
-            for match in re.finditer(r"Result:\s*([^\n\r]+)", content):
-                results.append(
-                    {
-                        "role": str(turn.get("role", "")),
-                        "value": match.group(1).strip(),
-                    }
-                )
-        return results
+        return extract_result_values(conversation)
 
     def _build_repair_prompt(
         self,

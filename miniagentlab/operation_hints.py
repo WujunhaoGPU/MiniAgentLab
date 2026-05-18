@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from .schemas import OperationHint
 
@@ -45,3 +46,17 @@ def parse_operation_hints(text: str) -> list[OperationHint]:
         break
 
     return hints
+
+
+def extract_result_values(conversation: list[dict[str, Any]]) -> list[dict[str, str]]:
+    results: list[dict[str, str]] = []
+    for turn in conversation:
+        content = str(turn.get("content", ""))
+        for match in re.finditer(r"Result:\s*([^\n\r]+)", content):
+            results.append(
+                {
+                    "role": str(turn.get("role", "")),
+                    "value": match.group(1).strip(),
+                }
+            )
+    return results

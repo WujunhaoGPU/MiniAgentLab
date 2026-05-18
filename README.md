@@ -23,7 +23,10 @@ flowchart TD
     Planner --> LLMPlanner["LLMPlanner"]
     RulePlanner --> Plan["Plan / Steps"]
     LLMPlanner --> Plan
-    Plan --> Executor["Executor"]
+    Plan --> Validator["PlanValidator"]
+    Validator -->|valid| Executor["Executor"]
+    Validator -->|invalid| Reflection["Reflection"]
+    Reflection --> Validator
     Executor --> Guard["max_steps 检查"]
     Guard --> Registry["Tool Registry"]
     Registry --> Tool["Python 工具函数"]
@@ -166,7 +169,7 @@ python -m unittest discover -s tests
 预期输出：
 
 ```text
-Ran 35 tests in 0.005s
+Ran 43 tests in 0.004s
 
 OK
 ```
