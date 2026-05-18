@@ -13,6 +13,7 @@ from .sql_tools import describe_table, list_tables, run_sql
 from .tool_registry import ToolRegistry
 from .trace import TraceLogger
 from .validator import PlanValidationIssue, PlanValidationResult, PlanValidator
+from .web_tools import extract_text, fetch_page, search_web, summarize_text
 
 __all__ = [
     "Agent",
@@ -34,10 +35,14 @@ __all__ = [
     "answer_question",
     "chunk_document",
     "describe_table",
+    "extract_text",
+    "fetch_page",
     "index_chunks",
     "list_tables",
     "load_document",
     "parse_operation_hints",
     "retrieve_chunks",
     "run_sql",
+    "search_web",
+    "summarize_text",
 ]

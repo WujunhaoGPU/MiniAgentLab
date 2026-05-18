@@ -169,7 +169,7 @@ python -m unittest discover -s tests
 预期输出：
 
 ```text
-Ran 68 tests in 0.642s
+Ran 73 tests in 0.683s
 
 OK
 ```
