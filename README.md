@@ -75,6 +75,8 @@ MiniAgentLab 主要用于学习和实践以下能力：
 
 后续仍待实现的扩展方向：
 
+> 注：下面几项是项目早期路线记录。当前版本已经实现 SQL 分析 Agent、文档问答 Agent 和网页检索 Agent；最新能力说明见本文后面的“MiniAgentLab 当前版总览”。
+
 - `VectorMemory`：文档检索记忆
 - `Reflection`：失败分析、参数修正、重新规划
 - SQL 分析 Agent
@@ -605,6 +607,8 @@ MiniAgentLab：轻量级 Agent 编排框架
 
 下一步推荐优先做：
 
+> 注：这里也是早期阶段规划。当前已完成 LLMPlanner、Memory、Reflection、SQL Agent、Document QA Agent 和 Web Search Agent；后续更适合继续做 DocumentReflection、WebReflection 和搜索 Provider 抽象。
+
 ```text
 LLMPlanner -> Memory -> Reflection -> SQL Agent
 ```
@@ -635,6 +639,480 @@ python examples\sql_agent.py
 当前完整测试：
 
 ```text
-Ran 62 tests in 0.619s
+Ran 73 tests in 0.621s
 OK
 ```
+# MiniAgentLab 当前版总览
+
+MiniAgentLab 是一个半学习、半实践的轻量级 Agent 编排框架。它不是为了复刻 LangChain、AutoGen 或 CrewAI，而是用尽量少的代码把 Agent 工程里的关键环节做清楚：
+
+```text
+Planner -> PlanValidator -> Executor -> Reflection -> Memory -> Trace
+```
+
+当前项目已经包含四类可运行 Agent 示例：
+
+- Calculator Agent：最小闭环与工具调用示例
+- SQL 分析 Agent：本地 SQLite 只读分析与 SQLReflection
+- Document QA Agent：本地文档问答与轻量 RAG
+- Web Search Agent：网页检索、页面抓取、正文抽取与摘要
+
+当前完整测试：
+
+```text
+Ran 73 tests
+OK
+```
+
+## 当前架构
+
+```mermaid
+flowchart TD
+    User["用户任务"] --> Agent["Agent"]
+    Agent --> Planner["Planner / LLMPlanner"]
+    Planner --> Plan["Plan / Steps"]
+    Plan --> Validator["PlanValidator"]
+    Validator -->|valid| Executor["Executor"]
+    Validator -->|invalid| Reflection["PlanReflection"]
+    Reflection --> Planner
+    Executor --> ToolRegistry["ToolRegistry"]
+    ToolRegistry --> Tools["Python Tools"]
+    Tools --> Executor
+    Executor -->|success| Memory["ShortTermMemory"]
+    Executor -->|failure| ExecReflection["Execution Reflection / SQLReflection"]
+    ExecReflection --> Planner
+    Agent --> Conversation["ConversationMemory"]
+    Agent --> Trace["TraceLogger"]
+```
+
+核心设计原则：
+
+- 工具只是普通 Python 函数，通过 `ToolRegistry` 注册。
+- Planner 只生成结构化 `Plan`，不直接执行工具。
+- Executor 只负责顺序执行、重试、记录 trace 和写入短期记忆。
+- Reflection 不做玄学自省，而是根据结构化错误决定修复、重规划或失败。
+- 单元测试使用本地、可复现的数据；真实 API 只用于 smoke test。
+
+## 已实现模块
+
+| 模块 | 文件 | 作用 |
+| --- | --- | --- |
+| Agent 主流程 | `miniagentlab/agent.py` | 协调规划、校验、执行、反思、记忆和 trace |
+| Planner | `miniagentlab/planner.py` | `RuleBasedPlanner` 与 `LLMPlanner` |
+| Tool Registry | `miniagentlab/tool_registry.py` | 注册和调用 Python 工具 |
+| Executor | `miniagentlab/executor.py` | 执行计划步骤、处理重试、记录失败 step |
+| Memory | `miniagentlab/memory.py` | 支持 `$memory.step_id` 和 `$memory.step_id.field` 引用 |
+| PlanValidator | `miniagentlab/validator.py` | 校验未知工具、步数、重复 step、错误 memory 引用等 |
+| Reflection | `miniagentlab/reflection.py` | 处理计划校验失败和默认执行失败 |
+| SQLReflection | `miniagentlab/sql_reflection.py` | 处理 SQL 执行错误并触发 replan |
+| Trace | `miniagentlab/trace.py` | 记录 run_id、plan、step、输出、错误和最终答案 |
+| LLM Client | `miniagentlab/llm.py` | OpenAI-compatible Chat Completions 调用 |
+
+## 工具与 Agent 示例
+
+### 1. Calculator Agent
+
+文件：
+
+- `miniagentlab/builtin_tools.py`
+- `examples/calculator_agent.py`
+- `tests/test_minimal_loop.py`
+
+能力：
+
+- 安全计算基础数学表达式
+- 验证 ToolRegistry、Executor、TraceLogger 的最小闭环
+- 作为后续 Memory、Reflection、LLMPlanner 的基准场景
+
+运行：
+
+```powershell
+python examples\calculator_agent.py
+```
+
+### 2. SQL 分析 Agent
+
+文件：
+
+- `miniagentlab/sql_tools.py`
+- `miniagentlab/sql_reflection.py`
+- `examples/sql_agent.py`
+- `tests/test_sql_tools.py`
+- `tests/test_sql_agent.py`
+- `tests/test_sql_reflection.py`
+
+工具：
+
+```text
+list_tables(db_path)
+describe_table(db_path, table_name)
+run_sql(db_path, sql, max_rows=50)
+```
+
+能力：
+
+- 查看本地 SQLite 数据库中的用户表
+- 查看表结构
+- 执行单条只读 `SELECT/WITH`
+- 拒绝 `DELETE`、`UPDATE`、`DROP`、多语句 SQL
+- 使用 SQLite authorizer 作为第二层只读保护
+- 当 SQL 执行失败时，`SQLReflection` 可以识别错误并触发重规划
+
+SQLReflection 当前支持：
+
+```text
+missing_table
+missing_column
+syntax_error
+unsafe_sql
+sql_execution_error
+```
+
+典型闭环：
+
+```text
+Planner 写错字段 total
+-> run_sql 报 no such column: total
+-> SQLReflection 分类为 missing_column
+-> Planner 收到 reflection_feedback
+-> 重新生成使用 amount 字段的 SQL
+-> Executor 执行成功
+```
+
+运行：
+
+```powershell
+python examples\sql_agent.py
+```
+
+### 3. Document QA Agent
+
+文件：
+
+- `miniagentlab/document_tools.py`
+- `examples/document_qa_agent.py`
+- `examples/docs/miniagentlab_notes.md`
+- `tests/test_document_tools.py`
+- `tests/test_document_qa_agent.py`
+- `docs/document_qa_notes.md`
+
+工具：
+
+```text
+load_document(path)
+chunk_document(document, chunk_size=500, overlap=80)
+index_chunks(chunks, store_id=None)
+retrieve_chunks(store_id, query, top_k=3)
+answer_question(question, chunks)
+```
+
+第一版支持 `.txt` 和 `.md`。为了保持项目精简，当前没有引入 Chroma、FAISS、sentence-transformers 或 embedding API，而是使用进程内内存索引和轻量词频向量。
+
+为了在不增加依赖的情况下提升 RAG 质量，已经做了三处轻量优化：
+
+- 标题/段落感知切片：保留 Markdown heading 到 chunk metadata
+- hybrid 检索打分：结合 cosine、关键词重合、标题命中和短语命中
+- 句子级回答：从检索片段中选最相关证据句，而不是直接拼接整个 chunk
+
+典型计划：
+
+```json
+{
+  "steps": [
+    {"id": "step_1", "tool": "load_document", "args": {"path": "examples/docs/miniagentlab_notes.md"}},
+    {"id": "step_2", "tool": "chunk_document", "args": {"document": "$memory.step_1"}},
+    {"id": "step_3", "tool": "index_chunks", "args": {"chunks": "$memory.step_2", "store_id": "notes"}},
+    {"id": "step_4", "tool": "retrieve_chunks", "args": {"store_id": "$memory.step_3.store_id", "query": "What does Reflection do?"}},
+    {"id": "step_5", "tool": "answer_question", "args": {"question": "What does Reflection do?", "chunks": "$memory.step_4"}}
+  ]
+}
+```
+
+运行：
+
+```powershell
+python examples\document_qa_agent.py
+```
+
+当前本地输出示例：
+
+```text
+Reflection analyzes failures from validation or tool execution.
+```
+
+### 4. Web Search Agent
+
+文件：
+
+- `miniagentlab/web_tools.py`
+- `examples/web_search_agent.py`
+- `tests/test_web_tools.py`
+- `tests/test_web_search_agent.py`
+- `docs/web_search_notes.md`
+
+工具：
+
+```text
+search_web(query, max_results=5, search_url=None)
+fetch_page(url, timeout=10)
+extract_text(page)
+summarize_text(text, query, max_sentences=3)
+```
+
+能力：
+
+- 从搜索结果页解析标题和 URL
+- 抓取 `http/https/file` 页面
+- 从 HTML 中抽取可读正文
+- 跳过 `script/style/noscript`
+- 基于 query 做句子级摘要
+- 支持 `$memory.step_1.0.url` 从搜索结果列表中取第一条 URL
+
+重要说明：
+
+当前单元测试和示例使用本地 `file://` HTML 页面模拟搜索结果。这是为了保证测试稳定、可复现，不受真实搜索引擎反爬、结果变化、网络超时影响。
+
+`search_web` 默认实现写了 DuckDuckGo HTML 入口：
+
+```text
+https://duckduckgo.com/html/?q=...
+```
+
+但真实搜索应该作为 smoke test，而不是单元测试依赖。当前已经验证过 LLMPlanner 能生成完整网页检索工具链：
+
+```text
+search_web -> fetch_page -> extract_text -> summarize_text
+```
+
+运行本地示例：
+
+```powershell
+python examples\web_search_agent.py
+```
+
+输出示例：
+
+```text
+Reflection analyzes failed plans and tool execution errors.
+```
+
+## Memory 引用规则
+
+Agent 的 step 之间通过 `ShortTermMemory` 传递结果。
+
+支持：
+
+```text
+$memory.step_1
+$memory.step_3.store_id
+$memory.step_1.0.url
+```
+
+含义：
+
+- `$memory.step_1`：引用整个 step 输出
+- `$memory.step_3.store_id`：引用 step 输出 dict 中的字段
+- `$memory.step_1.0.url`：引用 step 输出 list 的第 0 个元素中的 url 字段
+
+不支持：
+
+```text
+$step_1.result
+$steps.step_1
+```
+
+`PlanValidator` 会提前拦截这类错误引用，避免执行到工具层才失败。
+
+## Smoke Test 记录
+
+这个项目区分两类测试：
+
+- 单元测试：稳定、离线、可重复
+- smoke test：真实跑一遍关键链路，尽早暴露工程问题
+
+已经做过的 smoke test：
+
+| 场景 | 结果 |
+| --- | --- |
+| LLMPlanner 多轮 calculator | 通过，支持“把刚才结果加 5” |
+| SQLReflection 真实 API | 通过，`no such column` 后 replan |
+| Document QA LLMPlanner | 通过，生成完整文档问答工具链 |
+| Web Search LLMPlanner | 通过，生成完整网页检索工具链 |
+
+## Coding 中遇到的问题与修复
+
+### 1. 单元测试没有暴露 LLM prompt 问题
+
+问题：
+
+单元测试使用 `FakeLLM`，只能验证框架逻辑，不能验证真实模型是否理解“刚才的结果”“上一步”等表达。
+
+修复：
+
+- 增加真实 API smoke test
+- 引入 `ConversationMemory`
+- 引入 `PlannerContext`
+- 引入 `OperationHint`
+- 对高确定性 arithmetic follow-up 使用 fast path
+
+### 2. prompt 过度针对具体例子
+
+问题：
+
+一开始为了让模型理解“刚才结果加 5”，prompt 写得很具体，工程泛化性不足。
+
+修复：
+
+- 把自然语言提示改为结构化 `operation_hints`
+- LLMPlanner 优先使用结构化 hint
+- 再用 PlanValidator 检查计划是否违背 hint
+
+### 3. LLM 生成错误 memory 引用
+
+问题：
+
+文档问答真实 API smoke test 中，模型生成了：
+
+```text
+$step_1.result
+```
+
+但框架约定是：
+
+```text
+$memory.step_1
+```
+
+修复：
+
+- LLMPlanner prompt 明确 memory 引用语法
+- PlanValidator 新增 `invalid_memory_reference`
+- 错误引用在执行前被拦截
+
+### 4. LLM 传了整个 dict，而不是字段
+
+问题：
+
+`index_chunks` 返回：
+
+```json
+{"store_id": "doc_smoke", "chunk_count": 1}
+```
+
+LLM 把 `$memory.step_3` 传给 `retrieve_chunks.store_id`，导致工具收到 dict。
+
+修复：
+
+- `ShortTermMemory` 支持嵌套引用
+- 使用 `$memory.step_3.store_id`
+- 同时支持 list index，如 `$memory.step_1.0.url`
+
+### 5. SQLite 临时文件在 Windows 上无法删除
+
+问题：
+
+测试中使用 `with sqlite3.connect(path) as connection:` 后，Windows 删除临时数据库失败。
+
+原因：
+
+sqlite3 connection 的 context manager 管事务，不自动 close。
+
+修复：
+
+- 所有 SQLite 连接都显式 `connection.close()`
+
+### 6. SQL 工具不能只靠字符串判断安全
+
+问题：
+
+只用字符串判断 `SELECT` 不够稳。
+
+修复：
+
+- 第一层：只允许单条 `SELECT/WITH`
+- 第二层：SQLite `set_authorizer` 拦截写操作
+
+### 7. SQLReflection 不能自动修复危险 SQL
+
+问题：
+
+如果用户或 Planner 生成 `DELETE/UPDATE/DROP`，不应该由 Reflection 静默改成别的查询。
+
+修复：
+
+- `unsafe_sql` 直接失败
+- 只有 `missing_table`、`missing_column`、`syntax_error` 等进入 replan
+
+### 8. 文档切片质量影响答案质量
+
+问题：
+
+固定字符切片会把标题、段落和句子切乱，答案像“整块摘录”。
+
+修复：
+
+- Markdown heading/paragraph aware chunking
+- hybrid scoring
+- sentence-level answer selection
+
+### 9. 网页检索示例一开始不是绝对 file URI
+
+问题：
+
+`Path.as_uri()` 不能用于相对路径。
+
+修复：
+
+- 示例中使用 `.resolve()` 转为绝对路径
+
+### 10. 网页摘要重复标题
+
+问题：
+
+HTML title、h1 和正文混在一起，摘要出现重复标题。
+
+修复：
+
+- HTML block tag 作为文本边界
+- 摘要时过滤过短标题句
+- query-aware sentence ranking
+
+### 11. 真实 API smoke test 可能超时
+
+问题：
+
+SQLReflection 第一次真实 API smoke test 遇到 API 读取超时。
+
+修复：
+
+- 保留单元测试为离线稳定验证
+- smoke test 缩小输入和 prompt
+- 对真实 API 结果只做关键断言，不依赖长输出
+
+## 后续路线
+
+建议接下来做：
+
+1. WebReflection
+   - 搜索无结果时改写 query
+   - 抓取失败时换下一个结果
+   - 页面正文过短时继续尝试其他搜索结果
+
+2. DocumentReflection
+   - 检索为空时改写 query
+   - 检索分数过低时扩大 `top_k`
+   - chunk 参数不合适时调整切片
+
+3. Prompt Profile
+   - `LLMPlanner` 支持 SQL / Document QA / Web Search 专用 instructions
+   - 不急着做复杂 Router，先保持显式选择 Agent 示例
+
+4. 真实搜索 Provider 抽象
+   - `DuckDuckGoHTMLProvider`
+   - `MockSearchProvider`
+   - 后续可换 Tavily、SerpAPI、Bing API
+
+5. 更强文档检索
+   - 支持 PDF / DOCX
+   - 接 embedding API 或 sentence-transformers
+   - 向量库持久化
